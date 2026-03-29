@@ -1,6 +1,6 @@
 'use client';
 
-import { createContext, useContext, useState, useCallback } from 'react';
+import { createContext, useContext, useState, useCallback, useEffect } from 'react';
 import { connectWallet, isFreighterInstalled } from '../lib/freighter';
 import { getNOVABalance, getTransactionHistory } from '../lib/horizonClient';
 
@@ -60,6 +60,57 @@ export function WalletProvider({ children }) {
     setTransactions([]);
     setError(null);
   }, []);
+
+  /** Poll wallet availability and handle visibility changes */
+  useEffect(() => {
+    if (!publicKey) return;
+
+    let intervalId = null;
+
+    const checkWalletAvailability = async () => {
+      const installed = await isFreighterInstalled();
+      if (!installed) {
+        disconnect();
+      }
+    };
+
+    const startPolling = () => {
+      // Check immediately on start
+      checkWalletAvailability();
+      // Then poll every 3 seconds
+      intervalId = setInterval(checkWalletAvailability, 3000);
+    };
+
+    const stopPolling = () => {
+      if (intervalId) {
+        clearInterval(intervalId);
+        intervalId = null;
+      }
+    };
+
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === 'hidden') {
+        stopPolling();
+      } else {
+        // Tab became visible - check state once and resume polling
+        checkWalletAvailability();
+        startPolling();
+      }
+    };
+
+    // Start polling if tab is visible
+    if (document.visibilityState === 'visible') {
+      startPolling();
+    }
+
+    // Listen for visibility changes
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+
+    return () => {
+      stopPolling();
+      document.removeEventListener('visibilitychange', handleVisibilityChange);
+    };
+  }, [publicKey, disconnect]);
 
   return (
     <WalletContext.Provider
